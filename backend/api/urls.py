@@ -1,9 +1,12 @@
 from django.urls import path
-from .views import upload_dataset, forecast, analyze_dataset, generate_report
+from .views import (upload_dataset,forecast,analyze_dataset,generate_report,signup,send_otp,verify_otp )
 
 urlpatterns = [
     path('upload/', upload_dataset),
     path('forecast/', forecast),
     path('analyze/', analyze_dataset),
     path('generate_report/', generate_report),
+    path('signup/', signup),
+    path('send-otp/', send_otp),
+    path('verify-otp/', verify_otp),
 ]

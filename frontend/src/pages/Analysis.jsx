@@ -17,46 +17,26 @@ export default function Analysis() {
         <Navbar />
 
         <div className="page-header">
-          <h2>Analysis</h2>
-          <p>Deep insights powered by AI</p>
+          <h2>📊 AI Data Analysis</h2>
+          <p>Real insights from your dataset</p>
         </div>
 
         <div className="dashboard-grid">
 
-          <motion.div
-            className="card"
-            initial={{ opacity: 0, x: -40 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
+          <motion.div className="card">
             <h3>Upload Dataset</h3>
-            <p className="subtext">
-              Upload your dataset to analyze trends
-            </p>
-
             <Upload setFile={setFile} />
 
-            {file && (
-              <p className="file-info">📁 {file.name}</p>
-            )}
+            {file && <p>📁 {file.name}</p>}
           </motion.div>
 
-          {/* Analytics Section */}
-          <motion.div
-            className="card"
-            initial={{ opacity: 0, x: 40 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
+          <motion.div className="card">
             <h3>AI Insights</h3>
-            <p className="subtext">
-              Automated statistical & trend analysis
-            </p>
 
             {file ? (
               <AnalyticsPanel file={file} />
             ) : (
-              <div className="empty-state">
-                📊 Upload a dataset to see analysis
-              </div>
+              <p>Upload dataset to see analysis</p>
             )}
           </motion.div>
 

@@ -7,6 +7,7 @@ const API = axios.create({
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("access");
 
+  // ✅ Only attach token if exists
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -18,15 +19,16 @@ API.interceptors.request.use((config) => {
   return config;
 });
 
-
 API.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
+    // ✅ SAFE CHECK (prevents crash)
     if (
       error.response &&
-      error.response.data?.code === "token_not_valid" &&
+      error.response.data &&
+      error.response.data.code === "token_not_valid" &&
       !originalRequest._retry
     ) {
       originalRequest._retry = true;

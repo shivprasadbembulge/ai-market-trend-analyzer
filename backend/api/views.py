@@ -1,15 +1,20 @@
 import pandas as pd
 import numpy as np
-
+import random
+import matplotlib.pyplot as plt
+import tempfile
 from prophet import Prophet
-
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.http import HttpResponse
-
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+from django.contrib.auth.models import User
+from django.contrib.auth import authenticate
+from django.core.mail import send_mail
+from rest_framework_simplejwt.tokens import RefreshToken
+from .models import OTP
 
 
 def read_file(file):
@@ -41,16 +46,12 @@ def upload_dataset(request):
     if not file:
         return Response({"error": "No file provided"}, status=400)
 
-    try:
-        df = read_file(file)
+    df = read_file(file)
 
-        return Response({
-            "rows": int(len(df)),
-            "columns": list(df.columns)
-        })
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
+    return Response({
+        "rows": int(len(df)),
+        "columns": list(df.columns)
+    })
 
 
 @api_view(['POST'])
@@ -61,45 +62,50 @@ def forecast(request):
     if not file:
         return Response({"error": "No file provided"}, status=400)
 
-    try:
-        df = read_file(file)
+    df = read_file(file)
 
-        if 'Date' not in df.columns:
-            return Response({"error": "Missing Date column"}, status=400)
+    if 'Date' not in df.columns:
+        return Response({"error": "Missing Date column"}, status=400)
 
-        target = get_target_column(df)
+    target = get_target_column(df)
 
-        if not target:
-            return Response({
-                "error": "Need 'Sales quantity' or 'Close' column"
-            }, status=400)
+    if not target:
+        return Response({"error": "Need 'Sales quantity' or 'Close'"}, status=400)
 
-        df = df[['Date', target]].copy()
+    df = df[['Date', target]].copy()
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df[target] = pd.to_numeric(df[target], errors='coerce')
+    df = df.dropna().sort_values('Date')
 
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        df[target] = pd.to_numeric(df[target], errors='coerce')
+    if len(df) < 10:
+        return Response({"error": "Not enough data"}, status=400)
 
-        df = df.dropna()
-        df = df.sort_values('Date')
-        df = df.drop_duplicates(subset='Date')
+    df.columns = ['ds', 'y']
 
-        if len(df) < 10:
-            return Response({"error": "Not enough data"}, status=400)
+    model = Prophet(daily_seasonality=True)
+    model.fit(df)
 
-        df.columns = ['ds', 'y']
+    future = model.make_future_dataframe(periods=30)
+    forecast = model.predict(future)
 
-        model = Prophet(daily_seasonality=True)
-        model.fit(df)
+    result = forecast[['ds', 'yhat']]
 
-        future = model.make_future_dataframe(periods=30)
-        forecast = model.predict(future)
+    past = result.iloc[:-30]
+    future_data = result.iloc[-30:]
 
-        result = forecast[['ds', 'yhat']].tail(30)
+    trend = "increasing" if future_data['yhat'].iloc[-1] > past['yhat'].iloc[-1] else "decreasing"
+    volatility = "high" if future_data['yhat'].std() > past['yhat'].mean() * 0.3 else "moderate"
 
-        return Response(result.to_dict(orient="records"))
+    analysis = f"""
+    The forecast indicates a {trend} trend in future values.
+    The predicted data shows {volatility} variability.
+    """
 
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
+    return Response({
+        "past": past.to_dict(orient="records"),
+        "future": future_data.to_dict(orient="records"),
+        "analysis": analysis
+    })
 
 
 @api_view(['POST'])
@@ -110,144 +116,251 @@ def analyze_dataset(request):
     if not file:
         return Response({"error": "No file provided"}, status=400)
 
-    try:
-        df = read_file(file)
+    df = read_file(file)
 
-        df = df.replace([np.inf, -np.inf], np.nan)
-        df = df.dropna()
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.dropna()
 
-        numeric_cols = df.select_dtypes(include=np.number).columns
+    numeric_cols = df.select_dtypes(include=np.number).columns
 
-        stats = {
-            col: {
-                "mean": float(df[col].mean()),
-                "median": float(df[col].median()),
-                "variance": float(df[col].var())
-            }
-            for col in numeric_cols
-        }
+    if len(numeric_cols) == 0:
+        return Response({"error": "No numeric data found"}, status=400)
 
-        insights = []
+    col = numeric_cols[0]
 
-        target = get_target_column(df)
+    mean = df[col].mean()
+    median = df[col].median()
+    std = df[col].std()
 
-        if target:
-            avg = df[target].mean()
+    trend = "increasing" if df[col].iloc[-1] > df[col].iloc[0] else "decreasing"
 
-            insights.append(f"Average: {avg:.2f}")
+    outliers = df[(df[col] > mean + 2*std) | (df[col] < mean - 2*std)].shape[0]
+    missing = df.isnull().sum().sum()
 
-            if avg > df[target].median():
-                insights.append("Uptrend 📈")
-            else:
-                insights.append("Volatile 📉")
+    insight = f"""
+    The dataset shows a {trend} trend.
+    Average value is {round(mean,2)}.
+    """
 
-        return Response({
-            "stats": stats,
-            "ai_insights": insights
+    series = []
+    for i, row in df.head(100).iterrows():
+        series.append({
+            "ds": str(i),
+            "y": float(row[col])
         })
 
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
-
+    return Response({
+        "mean": round(mean, 2),
+        "median": round(median, 2),
+        "std": round(std, 2),
+        "trend": trend,
+        "outliers": int(outliers),
+        "missing": int(missing),
+        "insight": insight,
+        "series": series
+    })
 
 @api_view(['POST'])
+def send_otp(request):
+    username = request.data.get("username")
+
+    user = User.objects.filter(username=username).first()
+
+    if not user:
+        return Response({"error": "User not found"}, status=400)
+
+    OTP.objects.filter(user=user).delete()
+
+    code = str(random.randint(100000, 999999))
+
+    OTP.objects.create(user=user, code=code)
+
+    send_mail(
+        'OTP Verification',
+        f'Your OTP is {code}',
+        'no-reply@gmail.com',
+        [user.email],
+        fail_silently=True,
+    )
+
+    print("OTP:", code)
+
+    return Response({"message": "OTP sent"})
+
+@api_view(['POST'])
+def verify_otp(request):
+    username = request.data.get("username")
+    code = request.data.get("otp")
+
+    user = User.objects.filter(username=username).first()
+
+    if not user:
+        return Response({"error": "User not found"}, status=400)
+
+    otp_obj = OTP.objects.filter(user=user, code=code, is_verified=False).last()
+
+    if not otp_obj:
+        return Response({"error": "Invalid OTP"}, status=400)
+
+    otp_obj.is_verified = True
+    otp_obj.save()
+
+    refresh = RefreshToken.for_user(user)
+
+    return Response({
+        "access": str(refresh.access_token),
+        "refresh": str(refresh)
+    })
+
+@api_view(['POST'])
+def signup(request):
+    username = request.data.get('username')
+    password = request.data.get('password')
+    email = request.data.get('email')
+
+    if User.objects.filter(username=username).exists():
+        return Response({"error": "User already exists"}, status=400)
+
+    user = User.objects.create_user(
+        username=username,
+        password=password,
+        email=email
+    )
+
+    code = str(random.randint(100000, 999999))
+
+    OTP.objects.create(user=user, code=code)
+
+    send_mail(
+        'OTP Verification',
+        f'Your OTP is {code}',
+        'no-reply@gmail.com',
+        [email],
+        fail_silently=True,
+    )
+
+    print("OTP:", code)
+
+    return Response({
+        "message": "User created. OTP sent"
+    })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def generate_report(request):
     file = request.FILES.get('file')
 
     if not file:
         return Response({"error": "No file provided"}, status=400)
 
-    try:
-        df = read_file(file)
+    df = read_file(file)
 
-        target = get_target_column(df)
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.dropna()
 
-        if not target or 'Date' not in df.columns:
-            return Response({"error": "Invalid dataset"}, status=400)
+    numeric_cols = df.select_dtypes(include=np.number).columns
 
-        df = df[['Date', target]].copy()
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        df[target] = pd.to_numeric(df[target], errors='coerce')
+    if len(numeric_cols) == 0:
+        return Response({"error": "No numeric data"}, status=400)
 
-        df = df.dropna()
+    col = numeric_cols[0]
 
-        df.columns = ['ds', 'y']
+    rows = len(df)
+    mean = df[col].mean()
+    median = df[col].median()
+    std = df[col].std()
+    past = []
+    future_data = []
 
-        model = Prophet(daily_seasonality=True)
-        model.fit(df)
+    if 'Date' in df.columns:
+        df2 = df[['Date', col]].copy()
+        df2.columns = ['ds', 'y']
+        df2['ds'] = pd.to_datetime(df2['ds'])
+
+        model = Prophet()
+        model.fit(df2)
 
         future = model.make_future_dataframe(periods=30)
         forecast = model.predict(future)
 
-        result = forecast[['ds', 'yhat']].tail(30)
+        past = forecast[['ds', 'yhat']].iloc[:-30]
+        future_data = forecast[['ds', 'yhat']].iloc[-30:]
 
-        import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt
+    import tempfile
 
-        plt.figure(figsize=(6, 3))
-        plt.plot(result['ds'], result['yhat'], color='blue')
-        plt.title("Forecast")
-        plt.xticks(rotation=45)
+    plt.figure(figsize=(6,3))
+    if len(past) > 0:
+        plt.plot(past['ds'], past['yhat'])
+        plt.title("Past Analysis")
 
-        chart_path = "forecast.png"
-        plt.savefig(chart_path)
-        plt.close()
+    past_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    plt.savefig(past_img.name)
+    plt.close()
 
-        avg = df['y'].mean()
-        median = df['y'].median()
-        max_val = df['y'].max()
-        min_val = df['y'].min()
-        std = df['y'].std()
+    plt.figure(figsize=(6,3))
+    if len(future_data) > 0:
+        plt.plot(future_data['ds'], future_data['yhat'])
+        plt.title("Future Forecast")
 
-        insights = []
+    future_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    plt.savefig(future_img.name)
+    plt.close()
 
-        if avg > median:
-            insights.append("Overall upward trend observed 📈")
-        else:
-            insights.append("Market shows volatility 📉")
+    plt.figure(figsize=(4,4))
+    plt.bar(
+        ["Mean", "Median", "Std"],
+        [mean, median, std]
+    )
+    plt.title("AI Insights")
 
-        if std > avg * 0.3:
-            insights.append("High volatility detected ⚠️")
-        else:
-            insights.append("Stable trend observed ✅")
+    insight_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    plt.savefig(insight_img.name)
+    plt.close()
+    trend = "increasing" if df[col].iloc[-1] > df[col].iloc[0] else "decreasing"
 
-        insights.append(f"Peak value reached: {max_val}")
-        insights.append(f"Lowest value observed: {min_val}")
+    analysis = f"""
+    The dataset shows a {trend} trend.
+    Average value is {round(mean,2)}.
+    Median is {round(median,2)}.
+    Standard deviation is {round(std,2)}.
+    """
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="report.pdf"'
 
-        response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = 'attachment; filename=\"report.pdf\"'
+    doc = SimpleDocTemplate(response)
+    styles = getSampleStyleSheet()
 
-        doc = SimpleDocTemplate(response)
-        styles = getSampleStyleSheet()
+    content = []
 
-        content = []
+    content.append(Paragraph("AI Market Trend Report", styles['Title']))
+    content.append(Spacer(1, 12))
 
-        content.append(Paragraph("AI Market Analysis Report", styles['Title']))
-        content.append(Spacer(1, 10))
+    content.append(Paragraph(f"File Name: {file.name}", styles['Normal']))
+    content.append(Paragraph(f"Total Rows: {rows}", styles['Normal']))
+    content.append(Spacer(1, 12))
 
-        content.append(Paragraph(f"Total Rows: {len(df)}", styles['Normal']))
-        content.append(Paragraph(f"Average: {avg:.2f}", styles['Normal']))
-        content.append(Paragraph(f"Median: {median:.2f}", styles['Normal']))
-        content.append(Paragraph(f"Max: {max_val}", styles['Normal']))
-        content.append(Paragraph(f"Min: {min_val}", styles['Normal']))
-        content.append(Paragraph(f"Std Deviation: {std:.2f}", styles['Normal']))
+    content.append(Paragraph("Statistical Analysis", styles['Heading2']))
+    content.append(Paragraph(f"Mean: {round(mean,2)}", styles['Normal']))
+    content.append(Paragraph(f"Median: {round(median,2)}", styles['Normal']))
+    content.append(Paragraph(f"Std Dev: {round(std,2)}", styles['Normal']))
+    content.append(Spacer(1, 12))
 
-        content.append(Spacer(1, 15))
+    content.append(Paragraph("Past Analysis Chart", styles['Heading2']))
+    content.append(Image(past_img.name, width=400, height=200))
+    content.append(Spacer(1, 12))
 
-        content.append(Paragraph("AI Insights", styles['Heading2']))
-        content.append(Spacer(1, 10))
+    content.append(Paragraph("Future Forecast Chart", styles['Heading2']))
+    content.append(Image(future_img.name, width=400, height=200))
+    content.append(Spacer(1, 12))
 
-        for insight in insights:
-            content.append(Paragraph(f"• {insight}", styles['Normal']))
+    content.append(Paragraph("AI Insights Chart", styles['Heading2']))
+    content.append(Image(insight_img.name, width=300, height=200))
+    content.append(Spacer(1, 12))
 
-        content.append(Spacer(1, 20))
+    content.append(Paragraph("AI Post Analysis", styles['Heading2']))
+    content.append(Paragraph(analysis, styles['Normal']))
 
-        content.append(Paragraph("Forecast Chart", styles['Heading2']))
-        content.append(Spacer(1, 10))
-        content.append(Image(chart_path, width=400, height=200))
+    doc.build(content)
 
-        doc.build(content)
-
-        return response
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
+    return response 

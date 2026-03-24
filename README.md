@@ -1,127 +1,122 @@
-#  AI Market Trend Analyzer
+# AI Market Trend Analyzer
+
+## Overview
+
+AI Market Trend Analyzer is a data-driven analytics platform that allows users to upload datasets, analyze trends, and generate future predictions using machine learning. The system provides statistical insights, forecasting, and downloadable reports to support decision-making.
 
 
-##  Overview
+## Features
 
-AI Market Trend Analyzer is a full-stack AI-powered analytics platform that allows users to upload datasets, analyze trends, and predict future values using machine learning.
+* User authentication (login and signup)
+* Upload CSV or Excel datasets
+* Automated data analysis
+* Time series forecasting using Prophet
+* Visualization of past trends and future predictions
+* AI-generated insights and post-analysis
+* Downloadable PDF reports with charts and analysis
+* Responsive dashboard with modern UI
 
-It supports both **sales data** and **stock market datasets**, making it a versatile business intelligence tool.
 
----
+## Tech Stack
 
-##  Features
+### Frontend
 
-*  Upload CSV/Excel datasets
-*  Automated data analysis
-*  AI-based forecasting using Prophet
-*  Interactive charts and dashboards
-*  PDF report generation
-*  JWT Authentication (secure login)
-*  Auto token refresh
-
----
-
-##  How It Works
-
-1. User logs in securely
-2. Uploads dataset
-3. Backend processes data using Pandas
-4. Prophet model predicts future trends
-5. Results displayed with charts
-6. Report can be downloaded as PDF
-
----
-
-##  Screenshots
-
-###  Dashboard
-
-![Dashboard](./screenshots/dashboard.png)
-
-###  Forecast Chart
-
-![Forecast](./screenshots/forecast.png)
-
-###  Reports Page
-
-![Reports](./screenshots/reports.png)
-
----
-
-##  Tech Stack
-
-### 🔹 Frontend
-
-* React (Vite)
-* Axios
+* React
+* Framer Motion
 * Recharts
+* Axios
 
-### 🔹 Backend
+### Backend
 
 * Django
 * Django REST Framework
-* Prophet (AI Model)
-* Pandas / NumPy
+* Prophet
+* Pandas
+* NumPy
 
-### 🔹 Others
+### Reporting
 
-* ReportLab (PDF generation)
+* ReportLab
+* Matplotlib
 
----
 
-## ⚙️ Installation
+## Project Structure
 
-### 1️⃣ Clone Repository
+frontend/
+  src/
+    components/
+    pages/
+    services/
 
-```bash
-git clone https://github.com/your-username/ai-market-trend-analyzer.git
-cd ai-market-trend-analyzer
+backend/
+  api/
+    views.py
+    models.py
+    urls.py
 ```
 
----
+```
+## Installation
 
-### 2️ Backend Setup
+### Backend Setup
 
-```bash
 cd backend
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
+python manage.py migrate
 python manage.py runserver
-```
 
----
+### Frontend Setup
 
-### 3️ Frontend Setup
-
-```bash
 cd frontend
 npm install
-npm run dev
-```
+npm start
 
----
 
-##  API Endpoints
+## Usage
 
-| Endpoint                | Method | Description       |
-| ----------------------- | ------ | ----------------- |
-| `/api/login/`           | POST   | User login        |
-| `/api/upload/`          | POST   | Upload dataset    |
-| `/api/forecast/`        | POST   | Generate forecast |
-| `/api/analyze/`         | POST   | Data analysis     |
-| `/api/generate-report/` | POST   | Download report   |
+1. Open the frontend application
+2. Sign up and log in
+3. Upload a dataset (CSV or Excel)
+4. Navigate to:
 
----
+   * Dashboard for forecasting
+   * Analysis for statistical insights
+   * Reports for detailed reports and PDF download
+5. Generate forecasts and download reports
 
-##  Future Improvements
 
-*  Candlestick charts (stock view)
-*  Technical indicators (RSI, MA)
-*  Cloud deployment (AWS / Render)
-*  User profiles
+## Dataset Requirements
 
----
+* Must contain a Date column
+* Must contain a numeric column such as:
 
-##  Author
+  * Sales quantity
+  * Close price
 
-**SHIVPRASAD BEMBULGE**
 
+## Output
+
+The system generates:
+
+* Statistical metrics (mean, median, standard deviation)
+* Trend analysis
+* Outlier detection
+* Forecast charts (past and future)
+* AI-generated insights
+* PDF report with complete analysis
+
+
+## Future Improvements
+
+* Confidence interval visualization
+* Anomaly detection
+* Feature importance analysis
+* Real-time data integration
+* Deployment on cloud platforms
+
+
+## Author
+
+Shivprasad Bembulge

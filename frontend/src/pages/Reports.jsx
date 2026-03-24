@@ -13,11 +13,14 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  CartesianGrid,
 } from "recharts";
 
 export default function Reports() {
   const [file, setFile] = useState(null);
-  const [data, setData] = useState([]);
+  const [pastData, setPastData] = useState([]);
+  const [futureData, setFutureData] = useState([]);
+  const [analysis, setAnalysis] = useState("");
   const [loading, setLoading] = useState(false);
 
   const generateReport = async () => {
@@ -30,10 +33,13 @@ export default function Reports() {
       formData.append("file", file);
 
       const res = await API.post("forecast/", formData);
-      setData(res.data);
+
+      setPastData(res.data.past);
+      setFutureData(res.data.future);
+      setAnalysis(res.data.analysis);
 
     } catch (e) {
-      alert(" Forecast failed");
+      alert("Forecast failed");
       console.error(e);
     } finally {
       setLoading(false);
@@ -59,7 +65,7 @@ export default function Reports() {
       link.click();
 
     } catch (e) {
-      alert(" PDF generation failed");
+      alert("PDF generation failed");
     }
   };
 
@@ -71,17 +77,13 @@ export default function Reports() {
         <Navbar />
 
         <div className="page-header">
-          <h2>Reports</h2>
-          <p>Generate forecasts and export insights</p>
+          <h2>📊 Reports & Insights</h2>
+          <p>Forecast visualization + AI analysis</p>
         </div>
 
         <div className="dashboard-grid">
 
-          <motion.div
-            className="card"
-            initial={{ opacity: 0, x: -40 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
+          <motion.div className="card">
             <h3>Upload Dataset</h3>
 
             <input
@@ -89,78 +91,100 @@ export default function Reports() {
               onChange={(e) => setFile(e.target.files[0])}
             />
 
-            {file && (
-              <p className="file-info">📁 {file.name}</p>
-            )}
+            {file && <p>📁 {file.name}</p>}
           </motion.div>
 
-          <motion.div
-            className="card"
-            initial={{ opacity: 0, x: 40 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
+          <motion.div className="card">
             <h3>Actions</h3>
 
-            <div className="button-group">
-              <button onClick={generateReport} disabled={loading}>
-                {loading ? "Processing..." : "Generate Forecast"}
-              </button>
+            <button onClick={generateReport} disabled={loading}>
+              {loading ? "Processing..." : "Generate Report"}
+            </button>
 
-              <button onClick={downloadPDF}>
-                Download PDF
-              </button>
-            </div>
+            <button onClick={downloadPDF}>
+              Download PDF
+            </button>
           </motion.div>
+
         </div>
 
-        {/* Chart */}
-        <motion.div
-          className="card"
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <h3>Forecast Visualization</h3>
+        <div className="card">
+          <h3>📊 Past Analysis</h3>
 
-          {loading && <p>⏳ Processing forecast...</p>}
-
-          {data.length > 0 && !loading ? (
-            <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={data}>
-                <XAxis dataKey="ds" />
+          {pastData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={pastData}>
+                <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="ds" hide />
                 <YAxis />
                 <Tooltip />
+
                 <Line
-                  type="monotone"
                   dataKey="yhat"
-                  stroke="#6366f1"
+                  stroke="#22c55e"
                   strokeWidth={3}
+                  dot={false}
                 />
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            !loading && (
-              <div className="empty-state">
-                📈 Generate a forecast to view chart
-              </div>
-            )
+            <div className="empty-state">
+              Generate report to see past analysis
+            </div>
           )}
-        </motion.div>
+        </div>
 
-        <motion.div
-          className="card"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-        >
-          <h3>AI Analysis</h3>
+        <div className="card">
+          <h3>🔮 Future Forecast</h3>
+
+          {futureData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={futureData}>
+                <CartesianGrid stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="ds" hide />
+                <YAxis />
+                <Tooltip />
+
+                <Line
+                  dataKey="yhat"
+                  stroke="#6366f1"
+                  strokeWidth={3}
+                  strokeDasharray="5 5"
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty-state">
+              Generate report to see forecast
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <h3>🧠 AI Post Analysis</h3>
+
+          {analysis ? (
+            <p className="analysis-text">{analysis}</p>
+          ) : (
+            <div className="empty-state">
+              Generate report to view insights
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <h3> Dataset Analysis</h3>
 
           {file ? (
             <AnalyticsPanel file={file} />
           ) : (
             <div className="empty-state">
-              🤖 Upload dataset to unlock insights
+              Upload dataset to unlock insights
             </div>
           )}
-        </motion.div>
+        </div>
+
       </div>
     </div>
   );

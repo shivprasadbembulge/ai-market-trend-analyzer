@@ -1,73 +1,92 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import API from "../services/api";
-import Heatmap from "./Heatmap";
+import { motion } from "framer-motion";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 export default function AnalyticsPanel({ file }) {
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
 
-  const analyze = async () => {
-    try {
-      if (!file) {
-        alert("Upload dataset first");
-        return;
-      }
+  useEffect(() => {
+    if (!file) return;
 
-      setLoading(true);
-
+    const fetchData = async () => {
       const formData = new FormData();
       formData.append("file", file);
 
       const res = await API.post("analyze/", formData);
-
       setData(res.data);
+    };
 
-    } catch (e) {
-      console.error("ANALYSIS ERROR:", e);
+    fetchData();
+  }, [file]);
 
-      if (e.response) {
-        alert("❌ " + JSON.stringify(e.response.data));
-      } else {
-        alert("❌ Server error");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (!data) return <p>⏳ Analyzing dataset...</p>;
 
   return (
-    <div className="card">
-      <h3>📊 Data Analysis</h3>
+    <div>
 
-      <button onClick={analyze} disabled={loading}>
-        {loading ? "Analyzing..." : "Run Analysis"}
-      </button>
+      <div className="kpi-grid">
 
-      {loading && <p>⏳ Analyzing dataset...</p>}
+        <motion.div className="kpi-card" whileHover={{ scale: 1.05 }}>
+          <h4>Mean</h4>
+          <p>{data.mean}</p>
+        </motion.div>
 
-      {data && !loading && (
-        <div style={{ marginTop: "20px" }}>
-          
-          <h4>🤖 AI Insights</h4>
-          {data.ai_insights.map((insight, i) => (
-            <p key={i}>• {insight}</p>
-          ))}
+        <motion.div className="kpi-card" whileHover={{ scale: 1.05 }}>
+          <h4>Median</h4>
+          <p>{data.median}</p>
+        </motion.div>
 
-          <h4>📈 Statistics</h4>
-          {Object.entries(data.stats).map(([col, stats]) => (
-            <div key={col}>
-              <b>{col}</b>
-              <p>Mean: {stats.mean.toFixed(2)}</p>
-              <p>Median: {stats.median.toFixed(2)}</p>
-              <p>Variance: {stats.variance.toFixed(2)}</p>
-              <p>Missing: {stats.missing_values}</p>
-            </div>
-          ))}
+        <motion.div className="kpi-card" whileHover={{ scale: 1.05 }}>
+          <h4>Std Dev</h4>
+          <p>{data.std}</p>
+        </motion.div>
 
-          <Heatmap data={data.correlation} />
+        <motion.div className="kpi-card" whileHover={{ scale: 1.05 }}>
+          <h4>Outliers</h4>
+          <p>{data.outliers}</p>
+        </motion.div>
 
-        </div>
-      )}
+      </div>
+
+      <motion.div
+        className="insight-box"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <h4>🤖 AI Insight</h4>
+        <p>{data.insight}</p>
+      </motion.div>
+
+      <motion.div
+        className="chart-box"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        <h4>📈 Trend Analysis</h4>
+
+        <ResponsiveContainer width="100%" height={250}>
+          <LineChart data={data.series}>
+            <XAxis dataKey="ds" />
+            <YAxis />
+            <Tooltip />
+            <Line
+              dataKey="y"
+              stroke="#6366f1"
+              strokeWidth={3}
+              dot={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </motion.div>
+
     </div>
   );
 }
