@@ -11,7 +11,6 @@ from django.http import HttpResponse
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Image, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from django.contrib.auth.models import User
-from django.contrib.auth import authenticate
 from django.core.mail import send_mail
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import OTP
@@ -57,55 +56,51 @@ def upload_dataset(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def forecast(request):
-    file = request.FILES.get('file')
+    try:
+        file = request.FILES.get('file')
 
-    if not file:
-        return Response({"error": "No file provided"}, status=400)
+        if not file:
+            return Response({"error": "No file provided"}, status=400)
 
-    df = read_file(file)
+        df = read_file(file)
 
-    if 'Date' not in df.columns:
-        return Response({"error": "Missing Date column"}, status=400)
+        if 'Date' not in df.columns:
+            return Response({"error": "Missing Date column"}, status=400)
 
-    target = get_target_column(df)
+        target = get_target_column(df)
 
-    if not target:
-        return Response({"error": "Need 'Sales quantity' or 'Close'"}, status=400)
+        if not target:
+            return Response({"error": "Need 'Sales quantity' or 'Close'"}, status=400)
 
-    df = df[['Date', target]].copy()
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    df[target] = pd.to_numeric(df[target], errors='coerce')
-    df = df.dropna().sort_values('Date')
+        df = df[['Date', target]].copy()
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        df[target] = pd.to_numeric(df[target], errors='coerce')
+        df = df.dropna().sort_values('Date')
+        df = df.tail(300)
 
-    if len(df) < 10:
-        return Response({"error": "Not enough data"}, status=400)
+        if len(df) < 10:
+            return Response({"error": "Not enough data"}, status=400)
 
-    df.columns = ['ds', 'y']
+        df.columns = ['ds', 'y']
 
-    model = Prophet(daily_seasonality=True)
-    model.fit(df)
+        model = Prophet()
+        model.fit(df)
 
-    future = model.make_future_dataframe(periods=30)
-    forecast = model.predict(future)
+        future = model.make_future_dataframe(periods=365*5)
+        forecast = model.predict(future)
+        
+        result = forecast[['ds', 'yhat']]
+        past = result.iloc[-365:-1]
+        future_data = result.iloc[-365*5:]
 
-    result = forecast[['ds', 'yhat']]
+        return Response({
+            "past": past.to_dict(orient="records"),
+            "future": future_data.to_dict(orient="records"),
+            "analysis": "Forecast generated successfully."
+        })
 
-    past = result.iloc[:-30]
-    future_data = result.iloc[-30:]
-
-    trend = "increasing" if future_data['yhat'].iloc[-1] > past['yhat'].iloc[-1] else "decreasing"
-    volatility = "high" if future_data['yhat'].std() > past['yhat'].mean() * 0.3 else "moderate"
-
-    analysis = f"""
-    The forecast indicates a {trend} trend in future values.
-    The predicted data shows {volatility} variability.
-    """
-
-    return Response({
-        "past": past.to_dict(orient="records"),
-        "future": future_data.to_dict(orient="records"),
-        "analysis": analysis
-    })
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
 
 
 @api_view(['POST'])
@@ -117,7 +112,6 @@ def analyze_dataset(request):
         return Response({"error": "No file provided"}, status=400)
 
     df = read_file(file)
-
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna()
 
@@ -134,13 +128,10 @@ def analyze_dataset(request):
 
     trend = "increasing" if df[col].iloc[-1] > df[col].iloc[0] else "decreasing"
 
-    outliers = df[(df[col] > mean + 2*std) | (df[col] < mean - 2*std)].shape[0]
+    outliers = df[(df[col] > mean + 2 * std) | (df[col] < mean - 2 * std)].shape[0]
     missing = df.isnull().sum().sum()
 
-    insight = f"""
-    The dataset shows a {trend} trend.
-    Average value is {round(mean,2)}.
-    """
+    insight = f"The dataset shows a {trend} trend. Average value is {round(mean,2)}."
 
     series = []
     for i, row in df.head(100).iterrows():
@@ -160,6 +151,7 @@ def analyze_dataset(request):
         "series": series
     })
 
+
 @api_view(['POST'])
 def send_otp(request):
     username = request.data.get("username")
@@ -172,7 +164,6 @@ def send_otp(request):
     OTP.objects.filter(user=user).delete()
 
     code = str(random.randint(100000, 999999))
-
     OTP.objects.create(user=user, code=code)
 
     send_mail(
@@ -186,6 +177,7 @@ def send_otp(request):
     print("OTP:", code)
 
     return Response({"message": "OTP sent"})
+
 
 @api_view(['POST'])
 def verify_otp(request):
@@ -212,6 +204,7 @@ def verify_otp(request):
         "refresh": str(refresh)
     })
 
+
 @api_view(['POST'])
 def signup(request):
     username = request.data.get('username')
@@ -228,7 +221,6 @@ def signup(request):
     )
 
     code = str(random.randint(100000, 999999))
-
     OTP.objects.create(user=user, code=code)
 
     send_mail(
@@ -241,9 +233,8 @@ def signup(request):
 
     print("OTP:", code)
 
-    return Response({
-        "message": "User created. OTP sent"
-    })
+    return Response({"message": "User created. OTP sent"})
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -254,7 +245,6 @@ def generate_report(request):
         return Response({"error": "No file provided"}, status=400)
 
     df = read_file(file)
-
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna()
 
@@ -269,6 +259,7 @@ def generate_report(request):
     mean = df[col].mean()
     median = df[col].median()
     std = df[col].std()
+
     past = []
     future_data = []
 
@@ -280,43 +271,51 @@ def generate_report(request):
         model = Prophet()
         model.fit(df2)
 
-        future = model.make_future_dataframe(periods=30)
+        future = model.make_future_dataframe(periods=365*5)
         forecast = model.predict(future)
+        
+        past = forecast[['ds', 'yhat']].iloc[:-365*5]
+        future_data = forecast[['ds', 'yhat']].iloc[-365*5:]
 
-        past = forecast[['ds', 'yhat']].iloc[:-30]
-        future_data = forecast[['ds', 'yhat']].iloc[-30:]
-
-    import matplotlib.pyplot as plt
-    import tempfile
-
-    plt.figure(figsize=(6,3))
+    plt.figure(figsize=(6, 3))
     if len(past) > 0:
         plt.plot(past['ds'], past['yhat'])
         plt.title("Past Analysis")
-
+        ticks = past['ds'][::max(1, len(past)//5)]
+        plt.xticks(ticks=ticks, labels=[d.strftime('%Y') for d in ticks], rotation=0)
+    plt.tight_layout()
     past_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
     plt.savefig(past_img.name)
     plt.close()
 
-    plt.figure(figsize=(6,3))
+    plt.figure(figsize=(6, 3))
     if len(future_data) > 0:
-        plt.plot(future_data['ds'], future_data['yhat'])
-        plt.title("Future Forecast")
+       temp = future_data.copy()
+       temp['year'] = temp['ds'].dt.year
 
+       yearly = temp.groupby('year').mean().reset_index()
+       yearly['ds'] = pd.to_datetime(yearly['year'], format='%Y')
+       
+       plt.plot(yearly['ds'], yearly['yhat'])
+       plt.title("Future Forecast")
+       
+       plt.xticks(
+    ticks=yearly['ds'],
+    labels=[str(y) for y in yearly['year']],
+    rotation=0
+) 
+    plt.tight_layout()
     future_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
     plt.savefig(future_img.name)
     plt.close()
 
-    plt.figure(figsize=(4,4))
-    plt.bar(
-        ["Mean", "Median", "Std"],
-        [mean, median, std]
-    )
+    plt.figure(figsize=(4, 4))
+    plt.bar(["Mean", "Median", "Std"], [mean, median, std])
     plt.title("AI Insights")
-
     insight_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
     plt.savefig(insight_img.name)
     plt.close()
+
     trend = "increasing" if df[col].iloc[-1] > df[col].iloc[0] else "decreasing"
 
     analysis = f"""
@@ -325,6 +324,7 @@ def generate_report(request):
     Median is {round(median,2)}.
     Standard deviation is {round(std,2)}.
     """
+
     response = HttpResponse(content_type='application/pdf')
     response['Content-Disposition'] = 'attachment; filename="report.pdf"'
 
@@ -335,7 +335,6 @@ def generate_report(request):
 
     content.append(Paragraph("AI Market Trend Report", styles['Title']))
     content.append(Spacer(1, 12))
-
     content.append(Paragraph(f"File Name: {file.name}", styles['Normal']))
     content.append(Paragraph(f"Total Rows: {rows}", styles['Normal']))
     content.append(Spacer(1, 12))
@@ -363,4 +362,4 @@ def generate_report(request):
 
     doc.build(content)
 
-    return response 
+    return response
